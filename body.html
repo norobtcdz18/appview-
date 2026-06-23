@@ -1,0 +1,204 @@
+
+
+  <div id="homeScreen" class="screen active">
+    <header>
+      <h1><i id="cloudIcon" class="ri-cloud-fill" style="color: var(--success);"></i> السحابة</h1>
+      <div class="header-actions">
+        <button class="icon-btn" onclick="fetchProjectsData()" title="تحديث"><i class="ri-refresh-line"></i></button>
+      </div>
+    </header>
+    
+    <main class="projects-container" id="projectsList">
+      <div class="empty-state">
+        <i class="ri-loader-4-line ri-spin"></i>
+        <p>جاري جلب المشاريع من السحابة...</p>
+      </div>
+    </main>
+
+    <button class="fab" onclick="newProject()">
+      <i class="ri-add-line"></i>
+    </button>
+  </div>
+
+  <div id="editorScreen" class="screen">
+    <header>
+      <button class="icon-btn" onclick="closeProject()"><i class="ri-arrow-right-line"></i></button>
+      <input type="text" id="projectName" class="editor-header-input" placeholder="اسم المشروع" oninput="updateName()">
+      <div class="header-actions">
+        <button class="icon-btn success-text" onclick="saveCurrent()"><i class="ri-save-3-fill"></i></button>
+      </div>
+    </header>
+
+    <div class="tabs-container">
+      <button class="tab-btn active" onclick="switchTab('editor', this)"><i class="ri-code-s-slash-line"></i> المحرر</button>
+      <button class="tab-btn" onclick="switchTab('preview', this)"><i class="ri-eye-line"></i> المعاينة</button>
+    </div>
+
+    <div class="workspace">
+      <div class="view-panel active" id="viewEditor">
+        <textarea id="codeEditor" placeholder="" oninput="autoSave()"></textarea>
+      </div>
+      <div class="view-panel" id="viewPreview">
+        <iframe id="previewFrame"></iframe>
+        <button class="fullscreen-btn" onclick="toggleFullscreen()" title="ملء الشاشة"><i class="ri-fullscreen-line"></i></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal">
+    <div class="modal-box">
+      <h3 id="modalTitle">مشروع جديد</h3>
+      <input type="text" id="modalInput" placeholder="اسم المشروع" autocomplete="off">
+      <div class="modal-actions">
+        <button class="modal-btn cancel" onclick="closeModal()">إلغاء</button>
+        <button class="modal-btn confirm" id="modalConfirm">إنشاء</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+    import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+
+    // إعدادات Firebase الخاصة بك
+    const firebaseConfig = {
+      apiKey: "AIzaSyCqqQIey88U8Aqz3Jb_-sXIudzrEzPZPnI",
+      authDomain: "masarifi-4e451.firebaseapp.com",
+      projectId: "masarifi-4e451",
+      storageBucket: "masarifi-4e451.firebasestorage.app",
+      messagingSenderId: "792484875097",
+      appId: "1:792484875097:web:5df01e88e4b5af51121a48"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    let projects = {};
+    let currentId = null;
+    let autoSaveTimer = null;
+
+    // --- نظام تعقب حالة الإنترنت ---
+    window.checkNetworkStatus = (showMessage = true) => {
+      const cloudIcon = document.getElementById('cloudIcon');
+      if (navigator.onLine) {
+        cloudIcon.className = 'ri-cloud-fill'; // سحابة عادية
+        cloudIcon.style.color = 'var(--success)'; // أخضر
+        if(showMessage) window.showToast('متصل بالإنترنت', 'var(--success)', 'ri-wifi-line');
+      } else {
+        cloudIcon.className = 'ri-cloud-off-fill'; // سحابة مقطوعة
+        cloudIcon.style.color = 'var(--danger)'; // أحمر
+        if(showMessage) window.showToast('لا يوجد اتصال بالإنترنت', 'var(--danger)', 'ri-wifi-off-line');
+      }
+    };
+
+    // الاستماع لتغيرات الشبكة
+    window.addEventListener('online', () => window.checkNetworkStatus(true));
+    window.addEventListener('offline', () => window.checkNetworkStatus(true));
+    
+    // فحص الحالة عند فتح الصفحة (بدون إشعار مزعج)
+    window.checkNetworkStatus(false);
+    // -----------------------------
+
+    // دوال مساعدة
+    window.escapeHtml = (s) => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    
+    window.showToast = (msg, bgColor = 'var(--success)', icon = 'ri-check-line') => {
+      const existing = document.querySelector('.toast');
+      if(existing) existing.remove();
+      const t = document.createElement('div');
+      t.className = 'toast';
+      t.innerHTML = `<i class="${icon}"></i> ${msg}`;
+      t.style.background = bgColor;
+      document.body.appendChild(t);
+      void t.offsetWidth;
+      t.classList.add('show');
+      setTimeout(() => {
+        t.classList.remove('show');
+        setTimeout(() => t.remove(), 300);
+      }, 2500);
+    };
+
+    // جلب البيانات من فايربيز
+    window.fetchProjectsData = async () => {
+      if (!navigator.onLine) {
+        window.showToast('يرجى التحقق من الاتصال بالإنترنت', 'var(--danger)', 'ri-wifi-off-line');
+        return;
+      }
+      
+      try {
+        const querySnapshot = await getDocs(collection(db, "projects"));
+        projects = {};
+        querySnapshot.forEach((doc) => {
+          projects[doc.id] = doc.data();
+        });
+        window.renderList();
+      } catch (error) {
+        console.error("Error fetching projects: ", error);
+        window.showToast('خطأ في الاتصال بقاعدة البيانات', 'var(--danger)', 'ri-error-warning-line');
+      }
+    };
+
+    window.renderList = () => {
+      const list = document.getElementById('projectsList');
+      const ids = Object.keys(projects).sort((a,b) => (projects[b].created || 0) - (projects[a].created || 0));
+      
+      if (ids.length === 0) {
+        list.innerHTML = `
+          <div class="empty-state">
+            <i class="ri-folder-open-line"></i>
+            <p>لا توجد مشاريع سحابية بعد.<br>اضغط على + للبدء!</p>
+          </div>
+        `;
+        list.style.display = 'block';
+        return;
+      }
+
+      list.style.display = 'grid';
+      list.innerHTML = ids.map(id => `
+        <div class="project-card" onclick="loadProject('${id}')">
+          <div class="project-info">
+            <span class="project-title">${window.escapeHtml(projects[id].name)}</span>
+            <span class="project-date">سحابي ☁️</span>
+          </div>
+          <button class="delete-btn" onclick="event.stopPropagation(); deleteProject('${id}')">
+            <i class="ri-delete-bin-line"></i>
+          </button>
+        </div>
+      `).join('');
+    };
+
+    window.navigateTo = (screenId) => {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      document.getElementById(screenId).classList.add('active');
+    };
+
+    window.loadProject = (id) => {
+      currentId = id;
+      const p = projects[id];
+      document.getElementById('projectName').value = p.name;
+      document.getElementById('codeEditor').value = p.code;
+      window.navigateTo('editorScreen');
+      if(document.querySelector('.tab-btn.active').innerText.includes('المعاينة')) {
+        window.updatePreview();
+      }
+    };
+
+    window.closeProject = () => {
+      currentId = null;
+      document.getElementById('codeEditor').value = '';
+      window.renderList();
+      window.navigateTo('homeScreen');
+    };
+
+    window.newProject = () => {
+      if (!navigator.onLine) {
+        window.showToast('لا يمكن إنشاء مشروع بدون إنترنت', 'var(--danger)', 'ri-wifi-off-line');
+        return;
+      }
+
+      window.showModal('مشروع سحابي جديد', 'أدخل اسم المشروع', async (name) => {
+        if (!name.trim()) return;
+        const id = 'p_' + Date.now();
+        const newProj = {
+          name: name,
+          code: '<!DOCTYPE html>\n<html lang="ar" dir="rtl">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title>' + name + '</title>\n  <style>\n    body { font-family: system-ui, sans-serif; padding: 20px; }\n  </style>\n</head>\n<body>\n  <h1>مرحباً بك! 🚀</h1>\n
