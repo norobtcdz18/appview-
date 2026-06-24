@@ -4,13 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#0f172a">
+<title>مخزن مشاريع HTML | Cloud Pro</title>
+
+<link rel="manifest" href="manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Cloud Pro">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
-<link rel="apple-touch-icon" sizes="512x512" href="icons/icon-512.png">
-<link rel="manifest" href="manifest.json">
-<title>مخزن مشاريع HTML | Cloud Pro</title>
+<meta name="apple-mobile-web-app-title" content="مشاريعي">
+<link rel="apple-touch-icon" href="https://via.placeholder.com/192">
 
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
@@ -72,8 +72,6 @@
   }
 
   header h1 { font-size: 1.2rem; font-weight: 700; display: flex; align-items: center; gap: 8px; color: var(--text-main); }
-  
-  /* تأثير انتقال ناعم للون السحابة */
   #cloudIcon { transition: color 0.3s ease; }
 
   .header-actions { display: flex; gap: 12px; }
@@ -84,7 +82,6 @@
     display: flex; align-items: center; justify-content: center;
   }
   .icon-btn:active { background: var(--border); }
-  .icon-btn.primary-text { color: var(--primary); }
   .icon-btn.success-text { color: var(--success); }
 
   .projects-container {
@@ -118,6 +115,10 @@
   }
   .fab:active { transform: scale(0.9) rotate(45deg); }
 
+  /* زر التثبيت في الهيدر */
+  #pwaInstallBtn { display: none; color: var(--primary); font-weight: bold; animation: pulse 2s infinite; }
+  @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.1); } 100% { transform: scale(1); } }
+
   .editor-header-input {
     background: transparent; border: none; color: var(--text-main); font-family: 'Cairo', sans-serif;
     font-size: 1.1rem; font-weight: 600; text-align: center; flex: 1; padding: 4px 8px;
@@ -148,7 +149,6 @@
   
   #previewFrame { width: 100%; height: 100%; border: none; background: white; }
 
-  /* زر الفولسكرين */
   .fullscreen-btn {
     position: absolute; bottom: 20px; left: 20px; width: 45px; height: 45px;
     background: var(--primary); color: white; border: none; border-radius: 50%;
@@ -191,6 +191,7 @@
     <header>
       <h1><i id="cloudIcon" class="ri-cloud-fill" style="color: var(--success);"></i> السحابة</h1>
       <div class="header-actions">
+        <button id="pwaInstallBtn" class="icon-btn" onclick="triggerPwaInstall()" title="تثبيت التطبيق"><i class="ri-download-cloud-fill"></i></button>
         <button class="icon-btn" onclick="fetchProjectsData()" title="تحديث"><i class="ri-refresh-line"></i></button>
       </div>
     </header>
@@ -247,7 +248,6 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
     import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
-    // إعدادات Firebase الخاصة بك
     const firebaseConfig = {
       apiKey: "AIzaSyCqqQIey88U8Aqz3Jb_-sXIudzrEzPZPnI",
       authDomain: "masarifi-4e451.firebaseapp.com",
@@ -263,30 +263,57 @@
     let projects = {};
     let currentId = null;
     let autoSaveTimer = null;
+    let deferredPrompt;
+
+    // --- منطق الـ PWA والتثبيت (مثل الصورة) ---
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      // إظهار زر التثبيت في الهيدر
+      const installBtn = document.getElementById('pwaInstallBtn');
+      if(installBtn) installBtn.style.display = 'flex';
+    });
+
+    window.triggerPwaInstall = () => {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        deferredPrompt.userChoice.then((choiceResult) => {
+          if (choiceResult.outcome === 'accepted') {
+            document.getElementById('pwaInstallBtn').style.display = 'none';
+          }
+          deferredPrompt = null;
+        });
+      }
+    };
+
+    // تسجيل الـ Service Worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then(reg => console.log('SW Registered'))
+          .catch(err => console.log('SW Reg Failed', err));
+      });
+    }
 
     // --- نظام تعقب حالة الإنترنت ---
     window.checkNetworkStatus = (showMessage = true) => {
       const cloudIcon = document.getElementById('cloudIcon');
       if (navigator.onLine) {
-        cloudIcon.className = 'ri-cloud-fill'; // سحابة عادية
-        cloudIcon.style.color = 'var(--success)'; // أخضر
+        cloudIcon.className = 'ri-cloud-fill';
+        cloudIcon.style.color = 'var(--success)';
         if(showMessage) window.showToast('متصل بالإنترنت', 'var(--success)', 'ri-wifi-line');
       } else {
-        cloudIcon.className = 'ri-cloud-off-fill'; // سحابة مقطوعة
-        cloudIcon.style.color = 'var(--danger)'; // أحمر
+        cloudIcon.className = 'ri-cloud-off-fill';
+        cloudIcon.style.color = 'var(--danger)';
         if(showMessage) window.showToast('لا يوجد اتصال بالإنترنت', 'var(--danger)', 'ri-wifi-off-line');
       }
     };
 
-    // الاستماع لتغيرات الشبكة
     window.addEventListener('online', () => window.checkNetworkStatus(true));
     window.addEventListener('offline', () => window.checkNetworkStatus(true));
-    
-    // فحص الحالة عند فتح الصفحة (بدون إشعار مزعج)
     window.checkNetworkStatus(false);
-    // -----------------------------
 
-    // دوال مساعدة
+    // --- دوال التحكم بالتطبيق ---
     window.escapeHtml = (s) => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
     
     window.showToast = (msg, bgColor = 'var(--success)', icon = 'ri-check-line') => {
@@ -305,41 +332,29 @@
       }, 2500);
     };
 
-    // جلب البيانات من فايربيز
     window.fetchProjectsData = async () => {
       if (!navigator.onLine) {
         window.showToast('يرجى التحقق من الاتصال بالإنترنت', 'var(--danger)', 'ri-wifi-off-line');
         return;
       }
-      
       try {
         const querySnapshot = await getDocs(collection(db, "projects"));
         projects = {};
-        querySnapshot.forEach((doc) => {
-          projects[doc.id] = doc.data();
-        });
+        querySnapshot.forEach((doc) => { projects[doc.id] = doc.data(); });
         window.renderList();
       } catch (error) {
-        console.error("Error fetching projects: ", error);
-        window.showToast('خطأ في الاتصال بقاعدة البيانات', 'var(--danger)', 'ri-error-warning-line');
+        window.showToast('خطأ في الاتصال بقاعدة البيانات', 'var(--danger)');
       }
     };
 
     window.renderList = () => {
       const list = document.getElementById('projectsList');
       const ids = Object.keys(projects).sort((a,b) => (projects[b].created || 0) - (projects[a].created || 0));
-      
       if (ids.length === 0) {
-        list.innerHTML = `
-          <div class="empty-state">
-            <i class="ri-folder-open-line"></i>
-            <p>لا توجد مشاريع سحابية بعد.<br>اضغط على + للبدء!</p>
-          </div>
-        `;
+        list.innerHTML = `<div class="empty-state"><i class="ri-folder-open-line"></i><p>لا توجد مشاريع سحابية بعد.<br>اضغط على + للبدء!</p></div>`;
         list.style.display = 'block';
         return;
       }
-
       list.style.display = 'grid';
       list.innerHTML = ids.map(id => `
         <div class="project-card" onclick="loadProject('${id}')">
@@ -347,9 +362,7 @@
             <span class="project-title">${window.escapeHtml(projects[id].name)}</span>
             <span class="project-date">سحابي ☁️</span>
           </div>
-          <button class="delete-btn" onclick="event.stopPropagation(); deleteProject('${id}')">
-            <i class="ri-delete-bin-line"></i>
-          </button>
+          <button class="delete-btn" onclick="event.stopPropagation(); deleteProject('${id}')"><i class="ri-delete-bin-line"></i></button>
         </div>
       `).join('');
     };
@@ -365,162 +378,81 @@
       document.getElementById('projectName').value = p.name;
       document.getElementById('codeEditor').value = p.code;
       window.navigateTo('editorScreen');
-      if(document.querySelector('.tab-btn.active').innerText.includes('المعاينة')) {
-        window.updatePreview();
-      }
+      if(document.querySelector('.tab-btn.active').innerText.includes('المعاينة')) window.updatePreview();
     };
 
-    window.closeProject = () => {
-      currentId = null;
-      document.getElementById('codeEditor').value = '';
-      window.renderList();
-      window.navigateTo('homeScreen');
-    };
+    window.closeProject = () => { currentId = null; window.renderList(); window.navigateTo('homeScreen'); };
 
     window.newProject = () => {
-      if (!navigator.onLine) {
-        window.showToast('لا يمكن إنشاء مشروع بدون إنترنت', 'var(--danger)', 'ri-wifi-off-line');
-        return;
-      }
-
+      if (!navigator.onLine) { window.showToast('مطلوب إنترنت لإنشاء مشروع', 'var(--danger)'); return; }
       window.showModal('مشروع سحابي جديد', 'أدخل اسم المشروع', async (name) => {
         if (!name.trim()) return;
         const id = 'p_' + Date.now();
         const newProj = {
           name: name,
-          code: '<!DOCTYPE html>\n<html lang="ar" dir="rtl">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width, initial-scale=1.0">\n  <title>' + name + '</title>\n  <style>\n    body { font-family: system-ui, sans-serif; padding: 20px; }\n  </style>\n</head>\n<body>\n  <h1>مرحباً بك! 🚀</h1>\n</body>\n</html>',
+          code: '<!DOCTYPE html>\n<html lang="ar" dir="rtl">\n<head>\n<title>' + name + '</title>\n</head>\n<body>\n<h1>🚀 مرحباً بك!</h1>\n</body>\n</html>',
           created: Date.now()
         };
-        
         projects[id] = newProj;
         window.loadProject(id);
-        
-        try {
-          await setDoc(doc(db, "projects", id), newProj);
-          window.showToast('تم الإنشاء في السحابة', 'var(--success)', 'ri-cloud-fill');
-        } catch (e) {
-          window.showToast('حدث خطأ أثناء الحفظ', 'var(--danger)');
-        }
+        try { await setDoc(doc(db, "projects", id), newProj); window.showToast('تم الإنشاء سحابياً'); } catch (e) { }
       });
     };
 
     window.deleteProject = async (id) => {
-      if (!navigator.onLine) {
-        window.showToast('مطلوب إنترنت لحذف المشروع', 'var(--danger)', 'ri-wifi-off-line');
-        return;
-      }
-
-      if (!confirm('هل أنت متأكد من الحذف نهائياً من السحابة؟')) return;
-      delete projects[id];
-      window.renderList();
-      try {
-        await deleteDoc(doc(db, "projects", id));
-        window.showToast('تم الحذف سحابياً', 'var(--danger)', 'ri-delete-bin-line');
-      } catch(e) {
-        window.showToast('فشل الحذف', 'var(--danger)');
-      }
+      if (!navigator.onLine) { window.showToast('مطلوب إنترنت لحذف المشروع', 'var(--danger)'); return; }
+      if (!confirm('هل أنت متأكد من الحذف؟')) return;
+      delete projects[id]; window.renderList();
+      try { await deleteDoc(doc(db, "projects", id)); window.showToast('تم الحذف سحابياً', 'var(--danger)'); } catch(e) { }
     };
 
     window.saveCurrent = async () => {
       if (!currentId) return;
-      if (!navigator.onLine) {
-        window.showToast('حفظ مؤقت (لا يوجد إنترنت)', 'var(--danger)', 'ri-wifi-off-line');
-        return;
-      }
-
+      if (!navigator.onLine) { window.showToast('لا يوجد إنترنت للحفظ السحابي', 'var(--danger)'); return; }
       projects[currentId].name = document.getElementById('projectName').value || 'بدون اسم';
       projects[currentId].code = document.getElementById('codeEditor').value;
-      
-      try {
-        await setDoc(doc(db, "projects", currentId), projects[currentId]);
-        window.showToast('تم الحفظ في السحابة', 'var(--success)', 'ri-cloud-check-fill');
-      } catch(e) {
-        window.showToast('مشكلة في الاتصال', 'var(--danger)');
-      }
+      try { await setDoc(doc(db, "projects", currentId), projects[currentId]); window.showToast('تم الحفظ سحابياً'); } catch(e) { }
     };
 
-    // حفظ تلقائي
     window.autoSave = () => {
       if (!currentId) return;
       clearTimeout(autoSaveTimer);
-      projects[currentId].code = document.getElementById('codeEditor').value; 
-      
+      projects[currentId].code = document.getElementById('codeEditor').value;
       autoSaveTimer = setTimeout(async () => {
-        if(navigator.onLine) {
-          try {
-            await setDoc(doc(db, "projects", currentId), projects[currentId]);
-          } catch(e) {
-            console.error("Auto-save failed");
-          }
-        }
-      }, 3000); 
+        if(navigator.onLine) { try { await setDoc(doc(db, "projects", currentId), projects[currentId]); } catch(e){} }
+      }, 3000);
     };
 
-    window.updateName = () => {
-      if (!currentId) return;
-      projects[currentId].name = document.getElementById('projectName').value;
-      window.autoSave();
-    };
-
+    window.updateName = () => { if (!currentId) return; projects[currentId].name = document.getElementById('projectName').value; window.autoSave(); };
     window.switchTab = (tab, el) => {
-      document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active'));
-      el.classList.add('active');
+      document.querySelectorAll('.tab-btn').forEach(t => t.classList.remove('active')); el.classList.add('active');
       document.getElementById('viewEditor').classList.toggle('active', tab === 'editor');
       document.getElementById('viewPreview').classList.toggle('active', tab === 'preview');
       if (tab === 'preview') window.updatePreview();
     };
 
-    window.updatePreview = () => {
-      const code = document.getElementById('codeEditor').value;
-      const frame = document.getElementById('previewFrame');
-      frame.srcdoc = code;
-    };
+    window.updatePreview = () => {  document.getElementById('previewFrame').srcdoc = document.getElementById('codeEditor').value; };
 
     window.toggleFullscreen = () => {
       const frame = document.getElementById('previewFrame');
       if (!document.fullscreenElement) {
-        if (frame.requestFullscreen) {
-          frame.requestFullscreen();
-        } else if (frame.webkitRequestFullscreen) { 
-          frame.webkitRequestFullscreen();
-        } else if (frame.msRequestFullscreen) { 
-          frame.msRequestFullscreen();
-        }
+        if (frame.requestFullscreen) frame.requestFullscreen();
+        else if (frame.webkitRequestFullscreen) frame.webkitRequestFullscreen();
       } else {
-        if (document.exitFullscreen) {
-          document.exitFullscreen();
-        }
+        if (document.exitFullscreen) document.exitFullscreen();
       }
     };
 
     window.showModal = (title, placeholder, callback) => {
       document.getElementById('modalTitle').textContent = title;
-      const input = document.getElementById('modalInput');
-      input.value = '';
-      input.placeholder = placeholder;
-      document.getElementById('modal').classList.add('show');
-      setTimeout(() => input.focus(), 300);
-      const btn = document.getElementById('modalConfirm');
-      const newBtn = btn.cloneNode(true);
-      btn.parentNode.replaceChild(newBtn, btn);
+      const input = document.getElementById('modalInput'); input.value = ''; input.placeholder = placeholder;
+      document.getElementById('modal').classList.add('show'); setTimeout(() => input.focus(), 300);
+      const btn = document.getElementById('modalConfirm'); const newBtn = btn.cloneNode(true); btn.parentNode.replaceChild(newBtn, btn);
       newBtn.onclick = () => { callback(input.value); window.closeModal(); };
-      input.onkeydown = (e) => { if (e.key === 'Enter') { callback(input.value); window.closeModal(); } };
     };
-
     window.closeModal = () => { document.getElementById('modal').classList.remove('show'); };
 
-    // تحميل البيانات عند فتح الصفحة
-    if (navigator.onLine) {
-      window.fetchProjectsData();
-    }
-
-    // تسجيل Service Worker للـ PWA
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js')
-        .then((reg) => console.log('Service Worker مسجل:', reg.scope))
-        .catch((err) => console.warn('فشل تسجيل Service Worker:', err));
-    }
+    if (navigator.onLine) window.fetchProjectsData();
   </script>
-
 </body>
 </html>
